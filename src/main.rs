@@ -1,9 +1,11 @@
 extern crate glfw;
 extern crate gl;
 extern crate stb;
+extern crate glam;
 
-use std::{ffi::CString, fs, mem, ptr};
+use std::{f32::consts::PI, ffi::CString, fs, mem, os::raw::c_void, ptr};
 use gl::types::{GLchar, GLenum, GLint, GLsizei, GLsizeiptr};
+use glam::{Quat, Vec3};
 use glfw::Context;
 
 // TODO: texture object for single textures
@@ -19,15 +21,19 @@ fn main()
         .expect("Failed to create GLFW window");
 
     gl::load_with(|s| window.get_proc_address(s) as *const _);
+    // TODO: glViewport with event listeners
 
     window.set_key_polling(true);
     window.make_current();
     glfw.set_swap_interval(glfw::SwapInterval::Sync(1));
 
-    unsafe { gl::ClearColor(0.0, 0.0, 0.0, 1.0) };
+    unsafe { gl::ClearColor(1.0, 0.0, 1.0, 1.0) };
+
     let quad_shader = create_quad_shader();
     let quad_vao    = create_quad_vao();
     let texture     = create_texture("gapple.png");
+    let model       = create_model_matrix((50.0, 50.0), (32.0, 32.0), 0.0);
+    let projection  = create_projection_matrix();
 
     while !window.should_close()
     {
@@ -41,6 +47,9 @@ fn main()
             gl::ActiveTexture(gl::TEXTURE0);
             gl::BindTexture(gl::TEXTURE_2D, texture);
             gl::Uniform1i(gl::GetUniformLocation(quad_shader, "texData".as_ptr() as *const i8), 0);
+            set_uniform_mat4(&quad_shader, "model", &model);
+            set_uniform_mat4(&quad_shader, "projection", &projection);
+
             gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_BYTE, std::ptr::null());
         }
 
@@ -68,13 +77,13 @@ fn handle_window_event(window: &mut glfw::Window, event: glfw::WindowEvent)
     }
 }
 
-fn create_quad_vertices_and_indices() -> ([f32; 8], [u8; 6])
+fn create_quad_vertices_and_indices() -> ([f32; 16], [u8; 6])
 {
-    ([
-        -1.0, -1.0, 
-         1.0,  1.0,
-        -1.0,  1.0,
-         1.0, -1.0,
+    ([  // pos      // tex
+        -0.5, -0.5, 0.0, 0.0,
+         0.5,  0.5, 1.0, 1.0,
+        -0.5,  0.5, 0.0, 1.0,
+         0.5, -0.5, 1.0, 0.0
     ],
     [
         0, 1, 2,
@@ -102,8 +111,10 @@ fn create_quad_vao() -> u32
         gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, ebo);
         gl::BufferData(gl::ELEMENT_ARRAY_BUFFER, (indices.len() * mem::size_of::<u8>()) as GLsizeiptr, mem::transmute(&indices[0]), gl::STATIC_DRAW);
 
-        gl::VertexAttribPointer(0, 2, gl::FLOAT, gl::FALSE, (mem::size_of::<f32>() * 2) as i32, ptr::null());
+        gl::VertexAttribPointer(0, 2, gl::FLOAT, gl::FALSE, (mem::size_of::<f32>() * 4) as i32, ptr::null());
         gl::EnableVertexAttribArray(0);
+        gl::VertexAttribPointer(1, 2, gl::FLOAT, gl::FALSE, (mem::size_of::<f32>() * 4) as i32, ((mem::size_of::<f32>() * 2) as i32) as *const c_void);
+        gl::EnableVertexAttribArray(1);
 
         gl::BindVertexArray(0);
         gl::BindBuffer(gl::ARRAY_BUFFER, 0);
@@ -200,6 +211,16 @@ fn create_quad_shader() -> u32
     create_shader_program(vertex_shader, fragment_shader) 
 }
 
+fn set_uniform_mat4(shader: &u32, name: &str, mat4: &glam::f32::Mat4)
+{
+    unsafe
+    {
+        let uniform = CString::new(name.as_bytes()).unwrap();
+        let location = gl::GetUniformLocation(*shader, uniform.as_ptr());
+        gl::UniformMatrix4fv(location, 1, gl::FALSE, mem::transmute(&mat4.to_cols_array()[0]));
+    }
+}
+
 fn create_texture(filename: &str) -> u32
 {
     let file = fs::File::open(format!("assets/images/{}", filename))
@@ -207,6 +228,7 @@ fn create_texture(filename: &str) -> u32
     let mut buf_reader = std::io::BufReader::new(file);
 
     stb::image::stbi_set_flip_vertically_on_load(true);
+
     let (image_info, image_data) = stb::image::stbi_load_from_reader(&mut buf_reader, stb::image::Channels::RgbAlpha)
         .expect(format!("Error loading texture {}", filename).as_str());
 
@@ -228,4 +250,19 @@ fn create_texture(filename: &str) -> u32
     }
     
     texture
+}
+
+fn create_model_matrix(position: (f32, f32), size: (f32, f32), rotation_degrees: f32) -> glam::f32::Mat4
+{
+    glam::f32::Mat4::from_scale_rotation_translation
+    (
+        Vec3::new(size.0, size.1, 1.0),
+        Quat::from_axis_angle(Vec3::new(0.0, 0.0, 1.0), rotation_degrees / 180.0 * PI),
+        Vec3::new(position.0, position.1, 0.0 ) 
+    )
+}
+
+fn create_projection_matrix() -> glam::f32::Mat4
+{
+    glam::f32::Mat4::orthographic_rh_gl(0.0, 800.0, 600.0, 0.0, -1.0, 1.0)
 }
