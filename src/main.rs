@@ -3,7 +3,7 @@ extern crate gl;
 extern crate stb;
 extern crate glam;
 
-use std::{f32::consts::PI, ffi::CString, fs, mem, os::raw::c_void, ptr};
+use std::{f32::consts::PI, ffi::CString, fs, mem, os::raw::c_void, ptr, time::Instant};
 use gl::types::{GLchar, GLenum, GLint, GLsizei, GLsizeiptr};
 use glam::{Quat, Vec3};
 use glfw::Context;
@@ -25,18 +25,43 @@ fn main()
 
     window.set_key_polling(true);
     window.make_current();
-    glfw.set_swap_interval(glfw::SwapInterval::Sync(1));
+    //glfw.set_swap_interval(glfw::SwapInterval::Sync(1));
+    glfw.set_swap_interval(glfw::SwapInterval::None);
 
     unsafe { gl::ClearColor(1.0, 0.0, 1.0, 1.0) };
 
+    // deltatime
+    let mut delta_time;
+    let mut last_time = Instant::now();
+    let mut frame = 0;
+    let mut frame_time = 0;
+
+    // test objects
     let quad_shader = create_quad_shader();
     let quad_vao    = create_quad_vao();
     let texture     = create_texture("gapple.png");
     let model       = create_model_matrix((50.0, 50.0), (32.0, 32.0), 0.0);
+    let mut offsets: [(f32, f32); 128] = [(0.0, 0.0); 128];
+    for i in 0..128 
+    {
+        offsets[i] = (i as f32, 0.0);
+    }
     let projection  = create_projection_matrix();
 
     while !window.should_close()
     {
+        // Deltatime
+        delta_time = last_time.elapsed().as_nanos();
+        last_time = Instant::now();
+        frame_time += delta_time;
+        frame += 1;
+        if frame_time >= 1e9 as u128 
+        {
+            println!("FPS: {}", frame);
+            frame_time -= 1e9 as u128;
+            frame = 0;
+        }
+
         unsafe { gl::Clear(gl::COLOR_BUFFER_BIT) };
 
         // Rendering
@@ -47,10 +72,14 @@ fn main()
             gl::ActiveTexture(gl::TEXTURE0);
             gl::BindTexture(gl::TEXTURE_2D, texture);
             gl::Uniform1i(gl::GetUniformLocation(quad_shader, "texData".as_ptr() as *const i8), 0);
-            set_uniform_mat4(&quad_shader, "model", &model);
-            set_uniform_mat4(&quad_shader, "projection", &projection);
+            set_uniform_mat4(quad_shader, "model", &model);
+            set_uniform_mat4(quad_shader, "projection", &projection);
+            for i in 0..offsets.len()
+            {
+                set_uniform_vec2(quad_shader, format!("offsets[{}]", i).as_str(), &glam::f32::Vec2::new(offsets[i].0, offsets[i].1));
+            }
 
-            gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_BYTE, std::ptr::null());
+            gl::DrawElementsInstanced(gl::TRIANGLES, 6, gl::UNSIGNED_BYTE, std::ptr::null(), 128);
         }
 
         // Events
@@ -72,8 +101,7 @@ fn handle_window_event(window: &mut glfw::Window, event: glfw::WindowEvent)
         {
             window.set_should_close(true)
         }
-        _ => 
-        {}
+        _ => {}
     }
 }
 
@@ -211,12 +239,22 @@ fn create_quad_shader() -> u32
     create_shader_program(vertex_shader, fragment_shader) 
 }
 
-fn set_uniform_mat4(shader: &u32, name: &str, mat4: &glam::f32::Mat4)
+fn set_uniform_vec2(shader: u32, name: &str, vec2: &glam::f32::Vec2)
 {
     unsafe
     {
         let uniform = CString::new(name.as_bytes()).unwrap();
-        let location = gl::GetUniformLocation(*shader, uniform.as_ptr());
+        let location = gl::GetUniformLocation(shader, uniform.as_ptr());
+        gl::Uniform2f(location, vec2.x, vec2.y);
+    }
+}
+
+fn set_uniform_mat4(shader: u32, name: &str, mat4: &glam::f32::Mat4)
+{
+    unsafe
+    {
+        let uniform = CString::new(name.as_bytes()).unwrap();
+        let location = gl::GetUniformLocation(shader, uniform.as_ptr());
         gl::UniformMatrix4fv(location, 1, gl::FALSE, mem::transmute(&mat4.to_cols_array()[0]));
     }
 }
@@ -264,5 +302,5 @@ fn create_model_matrix(position: (f32, f32), size: (f32, f32), rotation_degrees:
 
 fn create_projection_matrix() -> glam::f32::Mat4
 {
-    glam::f32::Mat4::orthographic_rh_gl(0.0, 800.0, 600.0, 0.0, -1.0, 1.0)
+    glam::f32::Mat4::orthographic_rh_gl(0.0, 800.0, 0.0, 600.0, -1.0, 1.0)
 }
