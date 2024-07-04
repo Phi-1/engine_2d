@@ -7,6 +7,7 @@ mod shader;
 mod vao;
 mod math;
 mod texture;
+mod renderbatch;
 
 use std::time::Instant;
 use glfw::Context;
@@ -16,6 +17,7 @@ use glfw::Context;
 
 // TODO: set tickrate for calling provided update function, call render as often as possible
 // TODO: interface for running engine from other project, option setting, provide update and render functions, start
+
 fn main()
 {
     let mut glfw = glfw::init(glfw::fail_on_errors)
@@ -46,7 +48,7 @@ fn main()
     let quad_shader = shader::create_quad_shader();
     let quad_vao    = vao::create_quad_vao();
     let texture     = texture::create_texture("gapple.png");
-    let model       = math::create_model_matrix((50.0, 50.0), (32.0, 32.0), 0.0);
+    let model       = math::create_model_matrix((50.0, 50.0), (32.0, 32.0), 45.0);
     let mut offsets: [(f32, f32); 128] = [(0.0, 0.0); 128];
     for i in 0..128 
     {
@@ -63,7 +65,7 @@ fn main()
         frame += 1;
         if frame_time >= 1e9 as u128 
         {
-            println!("FPS: {}", frame);
+            window.set_title(format!("FPS: {}", frame).as_str());
             frame_time -= 1e9 as u128;
             frame = 0;
         }
